@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Step 2 — Voice Verification</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='voice.css') }}">
+</head>
+<body>
+    <header class="voice-header">
+        <div class="brand">
+            <div class="brand-mark">BV</div>
+            <div>
+                <h1>Biometric Voting Verification</h1>
+                <p>Two-step identity verification · Academic demo</p>
+            </div>
+        </div>
+        <nav class="header-links">
+            <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+            <a href="{{ url_for('logout') }}" class="nav-link nav-danger">Logout</a>
+        </nav>
+    </header>
+
+    <main class="page-shell">
+        <section class="step-banner">
+            <div class="step-pill completed"><span>✓</span><div><small>STEP 1</small><strong>Face + Liveness</strong></div></div>
+            <div class="step-line"></div>
+            <div class="step-pill active"><span>2</span><div><small>STEP 2</small><strong>Voice Match</strong></div></div>
+        </section>
+
+        <section class="voice-card">
+            <div class="card-heading">
+                <div>
+                    <div class="eyebrow">SECOND FACTOR</div>
+                    <h2>Verify your voice</h2>
+                    <p>Read the challenge sentence aloud. The app checks the sentence and compares a pretrained speaker embedding with the three-sample voice profile enrolled for this voter.</p>
+                </div>
+                <div class="voter-chip">Voter ID <strong>#{{ voter_id }}</strong></div>
+            </div>
+
+            <div class="challenge-panel">
+                <div class="challenge-icon">“ ”</div>
+                <div>
+                    <span class="challenge-label">SPEAK THIS SENTENCE</span>
+                    <p id="challengeText">{{ phrase }}</p>
+                </div>
+            </div>
+
+            {% if not has_reference_voice %}
+            <div class="notice notice-warning">
+                <strong>Reference voice not enrolled</strong>
+                <p>This voter does not have a current three-sample speaker profile. Open Voice Enrollment, record all three samples using the actual voter's voice, then repeat Step 1.</p>
+                <a class="button button-primary" href="{{ url_for('voice_enrollment_page', voter_id=voter_id) }}">Enroll reference voice</a>
+            </div>
+            {% else %}
+            <div class="recording-area">
+                <div class="mic-orb" id="micOrb"><span>🎙</span></div>
+                <div class="recording-status" id="recordingStatus">Ready to record</div>
+                <p class="recording-hint">The system checks both the exact sentence and a pretrained speaker embedding. Use a quiet room, speak naturally, and do not let another person read the sentence for you.</p>
+                <div class="transcript-box">
+                    <span>LIVE TRANSCRIPT</span>
+                    <p id="transcriptText">Your recognized sentence will appear here.</p>
+                </div>
+                <div class="button-row">
+                    <button id="startRecordBtn" class="button button-primary" type="button">Start speaking</button>
+                    <button id="verifyRecordBtn" class="button button-dark" type="button" disabled>Stop &amp; verify</button>
+                </div>
+                <div id="resultBox" class="result-box" role="status" aria-live="polite">Step 1 passed. Complete the voice check to finish demo verification.</div>
+            </div>
+            {% endif %}
+
+            <div class="privacy-note">
+                <span>ⓘ</span>
+                <p><strong>Academic prototype only.</strong> A voice match and a local demo registry do not establish legal voting eligibility. Do not use this prototype to approve or deny real voters.</p>
+            </div>
+        </section>
+
+        <p class="page-footnote">Speaker embeddings and three enrollment recordings are stored locally inside each voter's dataset folder. Older one-sample profiles must be enrolled again.</p>
+    </main>
+
+    <script src="{{ url_for('static', filename='voice_capture.js') }}"></script>
+    {% if has_reference_voice %}
+    <script>
+        const voterId = {{ voter_id|tojson }};
+        const startBtn = document.getElementById("startRecordBtn");
+        const verifyBtn = document.getElementById("verifyRecordBtn");
+        const statusEl = document.getElementById("recordingStatus");
+        const transcriptEl = document.getElementById("transcriptText");
+        const resultBox = document.getElementById("resultBox");
+        const micOrb = document.getElementById("micOrb");
+        let hasRecording = false;
+        let busy = false;
+
+        function showResult(message, type = "info") {
+            resultBox.textContent = message;
+            resultBox.className = `result-box ${type}`;
+        }
+
+        function showBusy(value) {
+            busy = value;
+            startBtn.disabled = value || VoiceCapture.isRecording();
+            verifyBtn.disabled = value || !VoiceCapture.isRecording();
+        }
+
+        startBtn.addEventListener("click", async () => {
+            if (busy || VoiceCapture.isRecording()) return;
+            transcriptEl.textContent = "Listening for your sentence…";
+            showResult("Recording in progress. Speak the complete sentence shown above.", "info");
+            try {
+                await VoiceCapture.start({
+                    onStatus: message => { statusEl.textContent = message; },
+                    onTranscript: text => {
+                        transcriptEl.textContent = text || "Listening…";
+                        hasRecording = !!text;
+                    },
+                    onError: message => { statusEl.textContent = message; }
+                });
+                micOrb.classList.add("recording");
+                startBtn.disabled = true;
+                verifyBtn.disabled = false;
+            } catch (error) {
+                statusEl.textContent = "Microphone unavailable";
+                showResult(error.message, "error");
+                startBtn.disabled = false;
+            }
+        });
+
+        verifyBtn.addEventListener("click", async () => {
+            if (busy || !VoiceCapture.isRecording()) return;
+            showBusy(true);
+            micOrb.classList.remove("recording");
+            statusEl.textContent = "Processing sentence and comparing the voice profile…";
+            try {
+                const recording = await VoiceCapture.stop();
+                verifyBtn.disabled = true;
+                startBtn.disabled = false;
+                if (!recording.transcript) {
+                    throw new Error("The sentence could not be transcribed. Try again and allow Chrome/Edge to use the microphone.");
+                }
+                transcriptEl.textContent = recording.transcript;
+                const form = new FormData();
+                form.append("voter_id", String(voterId));
+                form.append("transcript", recording.transcript);
+                form.append("audio", recording.blob, "voice.wav");
+                const response = await fetch("{{ url_for('api_verify_voice') }}", { method: "POST", body: form, cache: "no-store" });
+                const data = await response.json();
+                if (data.state === "ELIGIBLE_TO_PROCEED") {
+                    statusEl.textContent = "Both factors verified";
+                    const referenceDetails = Array.isArray(data.reference_similarities)
+                        ? ` Individual reference scores: ${data.reference_similarities.join("%, ")}% (each must be at least ${data.reference_threshold}%).`
+                        : "";
+                    showResult(`VERIFICATION SUCCESSFUL — You are eligible to proceed in this demo voting workflow. Voter ID #${data.voter_id}. Mean speaker similarity: ${data.voice_similarity}% (required: ${data.threshold}%).${referenceDetails}`, "success");
+                    resultBox.insertAdjacentHTML("beforeend", '<p class="result-subtext">This is a classroom prototype result, not official election eligibility confirmation.</p>');
+                    startBtn.textContent = "Record again";
+                } else if (data.state === "VOICE_MISMATCH") {
+                    statusEl.textContent = "Voice did not match";
+                    const referenceDetails = Array.isArray(data.reference_similarities)
+                        ? ` Reference scores: ${data.reference_similarities.join("%, ")}% (each must be at least ${data.reference_threshold}%).`
+                        : "";
+                    showResult(`${data.message} Mean speaker similarity: ${data.voice_similarity}% (required: ${data.threshold}%).${referenceDetails}`, "error");
+                } else {
+                    statusEl.textContent = "Verification needs attention";
+                    showResult(data.message || "Voice verification could not be completed.", "error");
+                }
+            } catch (error) {
+                statusEl.textContent = "Ready to retry";
+                showResult(error.message || "Could not verify the recording. Please try again.", "error");
+            } finally {
+                micOrb.classList.remove("recording");
+                busy = false;
+                startBtn.disabled = false;
+                verifyBtn.disabled = true;
+            }
+        });
+    </script>
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biometric Voting | Secure Verification</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/5/55/Emblem_of_India.svg" class="logo"
+                    alt="India Emblem">
+                <div>
+                    <h1>Biometric Voting Verification</h1>
+                    <p>Face Recognition + Active Liveness Detection · Step 1 of 2</p>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">
+                <a href="/voice-enroll" class="header-logout" style="display:inline-block;text-decoration:none;color:white;padding:10px 18px;font-size:14px;font-weight:600;border-radius:8px;box-shadow:0 6px 14px rgba(0,0,0,0.25);background:linear-gradient(135deg,#2563eb,#1d4ed8);">Voice Enrollment</a>
+                <a href="/logout" class="header-logout">Logout</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+
+        <section class="camera-section">
+            <div class="camera-box">
+                <div class="camera-title-row">
+                    <div>
+                        <h2>Verification Camera</h2>
+                        <p>Keep only one person in front of the camera.</p>
+                    </div>
+                    <span id="liveBadge" class="live-badge">OFFLINE</span>
+                </div>
+
+                <img id="videoFeed" src="/static/images/personlogo.png" alt="Camera Feed">
+
+                <div id="cameraStatus" class="camera-status off">Camera OFF</div>
+            </div>
+        </section>
+
+        <section class="control-panel">
+            <h2>Secure Voter Verification</h2>
+            <p class="panel-description">
+                Liveness is checked before face recognition to reduce photo-based spoofing.
+            </p>
+
+            <div class="security-flow">
+                <div id="stepFace" class="security-step">
+                    <span class="step-number">1</span>
+                    <span>Face detected</span>
+                    <span class="step-icon">○</span>
+                </div>
+                <div id="stepLive" class="security-step">
+                    <span class="step-number">2</span>
+                    <span>Liveness verified</span>
+                    <span class="step-icon">○</span>
+                </div>
+                <div id="stepMatch" class="security-step">
+                    <span class="step-number">3</span>
+                    <span>Face matched</span>
+                    <span class="step-icon">○</span>
+                </div>
+            </div>
+
+            <div class="buttons">
+                <button id="startBtn" class="btn primary" onclick="startCamera()">Start Camera</button>
+                <button id="checkBtn" class="btn scan" onclick="checkVoter()" disabled>Secure Verification</button>
+
+                <button id="registerBtn" class="btn success" onclick="registerFace()" style="display:none;">
+                    Register Voter
+                </button>
+
+                <button id="backBtn" class="btn secondary" onclick="resetSystem()" style="display:none;">
+                    Reset System
+                </button>
+
+                <button id="stopBtn" class="btn danger" onclick="stopCamera()">Stop Camera</button>
+            </div>
+
+            <div id="livenessGuide" class="liveness-guide">
+                <div class="guide-icon">◉</div>
+                <div>
+                    <strong>Active liveness check</strong>
+                    <p>When verification starts, look at the camera and blink once naturally.</p>
+                </div>
+            </div>
+
+            <div id="resultBox" class="result-box">
+                System ready. Start the camera to begin.
+            </div>
+        </section>
+
+        <section id="proofSection" class="proof-section" style="display:none;">
+            <div class="proof-box">
+                <h3>Registration Proof</h3>
+                <div id="proofContent">
+                    <img id="proofImage" src="" alt="Voter"
+                        style="max-width: 100%; border-radius: 5px; margin: 10px 0;">
+                    <p id="proofTime" style="font-size: 14px; color: #333;"></p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="footer">
+        Academic Project — Biometric Voting with Active Liveness Detection
+    </footer>
+
+    <script>
+        let cameraRunning = false;
+        let verificationRunning = false;
+        let redirectingToVoice = false;
+
+        function setResult(message, state = "idle") {
+            const box = document.getElementById("resultBox");
+            box.innerText = message;
+            box.className = `result-box ${state}`;
+        }
+
+        function setStep(id, state, symbol) {
+            const element = document.getElementById(id);
+            if (!element) return;
+            element.classList.remove("done", "active", "failed");
+            if (state) element.classList.add(state);
+            element.querySelector(".step-icon").innerText = symbol;
+        }
+
+        function resetSteps() {
+            setStep("stepFace", "", "○");
+            setStep("stepLive", "", "○");
+            setStep("stepMatch", "", "○");
+        }
+
+        function setBusy(busy) {
+            verificationRunning = busy;
+            document.getElementById("startBtn").disabled = busy;
+            document.getElementById("checkBtn").disabled = busy || redirectingToVoice || !cameraRunning;
+            document.getElementById("stopBtn").disabled = busy;
+            document.getElementById("registerBtn").disabled = busy;
+        }
+
+        async function startCamera() {
+            try {
+                const res = await fetch("/start_camera");
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.message || "Unable to start camera");
+
+                const video = document.getElementById("videoFeed");
+                video.src = "/video?" + new Date().getTime();
+
+                cameraRunning = true;
+                document.getElementById("liveBadge").innerText = "LIVE";
+                document.getElementById("liveBadge").className = "live-badge online";
+                updateStatus("Camera ON", true);
+                document.getElementById("checkBtn").disabled = false;
+                setResult("Camera ready. Click Secure Verification to begin.");
+                resetSteps();
+            } catch (error) {
+                setResult(error.message, "failed");
+            }
+        }
+
+        async function stopCamera() {
+            if (verificationRunning) return;
+
+            try {
+                await fetch("/stop_camera");
+            } finally {
+                cameraRunning = false;
+                const video = document.getElementById("videoFeed");
+                video.src = "/static/images/personlogo.png";
+                document.getElementById("liveBadge").innerText = "OFFLINE";
+                document.getElementById("liveBadge").className = "live-badge";
+                updateStatus("Camera OFF", false);
+                document.getElementById("checkBtn").disabled = true;
+                document.getElementById("registerBtn").style.display = "none";
+                document.getElementById("backBtn").style.display = "none";
+                document.getElementById("proofSection").style.display = "none";
+                resetSteps();
+                setResult("Camera stopped. Start it before verification.");
+            }
+        }
+
+        async function checkVoter() {
+            if (!cameraRunning || verificationRunning) return;
+
+            document.getElementById("registerBtn").style.display = "none";
+            document.getElementById("backBtn").style.display = "none";
+            document.getElementById("proofSection").style.display = "none";
+            resetSteps();
+            setBusy(true);
+            setResult("Starting secure verification...", "checking");
+            setStep("stepFace", "active", "…");
+
+            // The backend performs the actual timed liveness check.
+            try {
+                const res = await fetch("/check_voter", { cache: "no-store" });
+                const data = await res.json();
+
+                if (data.state === "LIVENESS_FAILED") {
+                    setStep("stepFace", "done", "✓");
+                    setStep("stepLive", "failed", "✕");
+                    setResult(data.message, "failed");
+                    document.getElementById("backBtn").style.display = "block";
+                    return;
+                }
+
+                if (data.state === "MULTIPLE_FACES") {
+                    setStep("stepFace", "failed", "✕");
+                    setResult(data.message, "failed");
+                    document.getElementById("backBtn").style.display = "block";
+                    return;
+                }
+
+                if (data.liveness_verified) {
+                    setStep("stepFace", "done", "✓");
+                    setStep("stepLive", "done", "✓");
+                }
+
+                if (data.state === "DUPLICATE") {
+                    setStep("stepMatch", "done", "✓");
+
+                    // The existing face/liveness algorithm is unchanged. A known
+                    // face match now proceeds to the newly added second factor.
+                    if (data.liveness_verified && data.voter_id) {
+                        redirectingToVoice = true;
+                        setResult(
+                            `Step 1 passed for voter ID #${data.voter_id}. Opening voice verification in 2–3 seconds…`,
+                            "success"
+                        );
+                        document.getElementById("backBtn").style.display = "none";
+                        window.setTimeout(() => {
+                            window.location.href = `/voice-verification/${encodeURIComponent(data.voter_id)}`;
+                        }, 2500);
+                        return;
+                    }
+
+                    setResult(
+                        `${data.message} Match score: ${data.confidence ?? "N/A"}`,
+                        "failed"
+                    );
+                    document.getElementById("backBtn").style.display = "block";
+                    if (data.proof) showProof(data.voter_id, data.proof);
+                    return;
+                }
+
+                if (data.state === "NEW_VOTER") {
+                    // Face exists and liveness passed, but the face
+                    // was NOT found in the registered voter model.
+                    setStep("stepFace", "done", "✓");
+                    setStep("stepLive", "done", "✓");
+                    setStep("stepMatch", "failed", "—");
+
+                    setResult(data.message, "success");
+
+                    document.getElementById("registerBtn").style.display = "block";
+                    document.getElementById("backBtn").style.display = "block";
+
+                    return;
+                }
+
+                setResult(data.message || "Verification could not be completed.", "checking");
+                document.getElementById("backBtn").style.display = "block";
+            } catch (error) {
+                setResult("Verification request failed. Check that the Flask server is running.", "failed");
+                document.getElementById("backBtn").style.display = "block";
+            } finally {
+                setBusy(false);
+                document.getElementById("checkBtn").disabled = !cameraRunning || redirectingToVoice;
+            }
+        }
+
+        async function registerFace() {
+            if (verificationRunning || !cameraRunning) return;
+
+            setBusy(true);
+            setResult("Saving voter and retraining face model...", "checking");
+
+            try {
+                const res = await fetch("/register_face");
+                const data = await res.json();
+
+                setResult(data.message, data.success ? "success" : "failed");
+
+                if (data.success) {
+                    setStep("stepFace", "done", "✓");
+                    setStep("stepLive", "done", "✓");
+                    setStep("stepMatch", "done", "✓");
+                    document.getElementById("registerBtn").style.display = "none";
+                    document.getElementById("backBtn").style.display = "block";
+
+                    if (data.voter_id && data.timestamp) {
+                        showRegisteredProof(data.voter_id, data.timestamp);
+                    }
+                }
+            } catch (error) {
+                setResult("Registration failed. Please try again.", "failed");
+            } finally {
+                setBusy(false);
+                document.getElementById("checkBtn").disabled = !cameraRunning;
+            }
+        }
+
+        function showProof(voterId, proof) {
+            const proofSection = document.getElementById("proofSection");
+            const proofTime = document.getElementById("proofTime");
+            const proofImage = document.getElementById("proofImage");
+
+            fetch(`/get_voter_image/${voterId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.image) {
+                        proofImage.src = data.image;
+                        proofImage.style.display = "block";
+                    }
+                })
+                .catch(() => { });
+
+            if (proof.date) {
+                proofTime.innerHTML = `<strong>Registered:</strong> ${proof.date}`;
+            }
+            proofSection.style.display = "block";
+        }
+
+        function showRegisteredProof(voterId, timestamp) {
+            const proofSection = document.getElementById("proofSection");
+            const proofTime = document.getElementById("proofTime");
+            const proofImage = document.getElementById("proofImage");
+
+            fetch(`/get_voter_image/${voterId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.image) {
+                        proofImage.src = data.image;
+                        proofImage.style.display = "block";
+                    }
+                })
+                .catch(() => { });
+
+            proofTime.innerHTML = `<strong>Registered:</strong> ${timestamp}`;
+            proofSection.style.display = "block";
+        }
+
+        async function resetSystem() {
+            if (verificationRunning) return;
+
+            await fetch("/reset");
+
+            cameraRunning = false;
+            document.getElementById("videoFeed").src = "/static/images/personlogo.png";
+            document.getElementById("liveBadge").innerText = "OFFLINE";
+            document.getElementById("liveBadge").className = "live-badge";
+            updateStatus("Camera OFF", false);
+            document.getElementById("checkBtn").disabled = true;
+            document.getElementById("registerBtn").style.display = "none";
+            document.getElementById("backBtn").style.display = "none";
+            document.getElementById("proofSection").style.display = "none";
+            resetSteps();
+            setResult("System ready. Start the camera to begin.");
+        }
+
+        function updateStatus(text, on) {
+            const status = document.getElementById("cameraStatus");
+            status.innerText = text;
+            status.className = on ? "camera-status on" : "camera-status off";
+        }
+
+        window.addEventListener("beforeunload", function () {
+            navigator.sendBeacon("/force_stop_camera", new Blob([], { type: "application/json" }));
+        });
+    </script>
+
+</body>
+
+</html>
