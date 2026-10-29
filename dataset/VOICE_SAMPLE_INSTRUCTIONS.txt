@@ -1,0 +1,14 @@
+Voice reference samples are not pre-populated because valid speaker references must be
+recorded from each actual consenting demo participant. Start the app, log in, and use
+the dashboard's Voice Enrollment page. Select the correct registered voter ID and record
+the full displayed challenge sentence three separate times. The same person must speak
+all three samples.
+
+For voter ID N, the app stores a speaker profile and source recordings in:
+  dataset/user_N/voice_profile.npz
+  dataset/user_N/voice_reference.wav
+  dataset/user_N/voice_reference_2.wav
+  dataset/user_N/voice_reference_3.wav
+
+Do not copy one person's recording/profile into another user's folder. Use consented demo
+data only. This academic prototype is not for real election eligibility decisions.
