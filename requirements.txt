@@ -1,0 +1,13 @@
+# Use Python 3.10 x64 on Windows. OpenCV-contrib is required for cv2.face.
+Flask==3.1.2
+numpy==1.26.4
+opencv-contrib-python==4.11.0.86
+mediapipe==0.10.21
+
+# ECAPA-TDNN speaker verification (model weights download on first enrollment/verification).
+torch==2.5.1
+torchaudio==2.5.1
+speechbrain==1.0.3
+huggingface-hub==0.26.5
+scipy==1.14.1
+soundfile==0.12.1

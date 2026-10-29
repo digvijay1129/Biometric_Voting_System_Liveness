@@ -1,0 +1,43 @@
+BIOMETRIC VOTING SYSTEM - WINDOWS START GUIDE
+
+RECOMMENDED SETUP (fixes ModuleNotFoundError: No module named 'cv2')
+1. Install Python 3.10 x64 and ensure the Windows 'py' launcher is available.
+2. Extract the ZIP to a normal folder (not inside another ZIP).
+3. Open the extracted project folder in File Explorer.
+4. Double-click setup_windows.bat. It creates a dedicated .venv and installs every package from requirements.txt, including opencv-contrib-python (which provides cv2.face).
+5. After setup succeeds, run this command from PowerShell in the project folder:
+       .venv\Scripts\python.exe src\app.py
+6. Open http://127.0.0.1:5000/ in Chrome or Edge.
+
+Alternative PowerShell commands:
+    py -3.10 -m venv .venv
+    .venv\Scripts\python.exe -m pip install --upgrade pip
+    .venv\Scripts\python.exe -m pip install -r requirements.txt
+    .venv\Scripts\python.exe check_setup.py
+    .venv\Scripts\python.exe src\app.py
+
+IMPORTANT:
+- Do not run 'python src/app.py' from an unrelated or old virtual environment. Use the .venv interpreter above so cv2 and the other dependencies are available.
+- Do not install opencv-python separately beside opencv-contrib-python; both provide the cv2 namespace and may conflict.
+- SpeechBrain's pretrained ECAPA speaker model downloads from Hugging Face the first time Voice Enrollment/Verification is used. Keep an internet connection available until it finishes. The model is then cached under models/speaker_ecapa/.
+- Login (demo only): admin / admin123.
+
+VOICE SETUP AND TEST:
+1. Register faces using the existing dashboard flow.
+2. Open Voice Enrollment and select the matching voter ID.
+3. Record the full displayed sentence three separate times in a quiet room, all by the same person.
+4. Enrollment is rejected if its three speaker embeddings do not look consistent with one speaker.
+5. Complete Step 1 (face + blink-liveness), then speak the sentence in Step 2.
+6. The voice decision checks exact sentence transcription AND the speaker embedding against all three reference takes. It no longer uses the two best reference scores only.
+7. For a better demo, enroll each friend under that friend's own registered voter ID, then test the same friend's voice against a different ID. The app also compares the live embedding with other enrolled voice profiles.
+
+VOICE MATCHING BEHAVIOR:
+- ECAPA-TDNN speaker embeddings replace the previous Resemblyzer version.
+- Acceptance currently requires mean target similarity >= 55%, every individual reference similarity >= 45%, and a 12-point margin over the closest other enrolled profile when another profile exists.
+- Those values are conservative starter values, not universal guarantees. They may reject a legitimate speaker due to noisy audio/microphone differences; have the person retry in a quiet room and re-enroll if needed.
+- If sentence matches but speaker similarity fails, Step 2 must fail. If the model is missing/unavailable, verification fails closed rather than falling back to sentence-only acceptance.
+
+RESETTING OLD VOICE DATA:
+Old voice_profile.npz files from previous versions are incompatible. Re-enroll each voter from the Voice Enrollment page using three fresh recordings. The app will tell you if the old profile needs replacing.
+
+This is an educational prototype. No biometric model can guarantee perfect outcomes for every person and recording condition. Do not use it for real election eligibility or other high-stakes decisions.
